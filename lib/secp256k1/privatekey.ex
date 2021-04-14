@@ -161,4 +161,19 @@ defmodule Bitcoinex.Secp256k1.PrivateKey do
       %Signature{r: sig_r, s: sig_s}
     end
   end
+
+  @doc """
+  sign_message returns an ECDSA signature using the privkey and msg
+  where privkey is a PrivateKey object and msg is a binary message to be hashed. 
+  The nonce is derived using RFC6979. 
+  """
+  @spec sign(t(), binary) :: Signature.t()
+  def sign_message(privkey, msg) do
+    z = 
+      msg
+      |> Bitcoinex.Utils.double_sha256()
+      |> :binary.decode_unsigned()
+    Bitcoinex.Secp256k1.PrivateKey.sign(privkey, z)
+  end
+
 end
