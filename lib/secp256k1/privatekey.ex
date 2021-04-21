@@ -170,11 +170,11 @@ defmodule Bitcoinex.Secp256k1.PrivateKey do
   """
   @spec sign(t(), binary) :: Signature.t()
   def sign_message(privkey, msg) do
-    z = 
+    z =
       msg
       |> Bitcoinex.Utils.double_sha256()
       |> :binary.decode_unsigned()
+
     Bitcoinex.Secp256k1.PrivateKey.sign(privkey, z)
   end
-
 end
