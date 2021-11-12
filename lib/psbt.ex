@@ -72,6 +72,12 @@ defmodule Bitcoinex.PSBT do
        outputs: outputs
      }}
   end
+
+  def extract_transaction(%__MODULE__{global: global}), do: global.unsigned_tx
+
+  def add_non_witness_utxo(psbt = %__MODULE__{inputs: inputs}, input_idx, tx = %Bitcoinex.Transaction{}) do
+    %{psbt | %{psbt.inputs[]}}
+  end
 end
 
 defmodule Bitcoinex.PSBT.Utils do
@@ -273,11 +279,13 @@ defmodule Bitcoinex.PSBT.In do
     |> parse_input([], num_inputs)
   end
 
-  defp serialize_kv(:non_witness_utxo, value) when value != nil do
+  defp serialize_kv(_type, nil), do: <<>>
+
+  defp serialize_kv(:non_witness_utxo, value) do
     PsbtUtils.serialize_kv(<<@psbt_in_non_witness_utxo::big-size(8)>>, TxUtils.serialize(value))
   end
 
-  defp serialize_kv(:witness_utxo, value) when value != nil do
+  defp serialize_kv(:witness_utxo, value) do
     script = Base.decode16!(value.script_pub_key, case: :lower)
 
     val =
@@ -287,46 +295,46 @@ defmodule Bitcoinex.PSBT.In do
     PsbtUtils.serialize_kv(<<@psbt_in_witness_utxo::big-size(8)>>, val)
   end
 
-  defp serialize_kv(:partial_sig, value) when value != nil do
+  defp serialize_kv(:partial_sig, value) do
     key_data = Base.decode16!(value.public_key, case: :lower)
     val = Base.decode16!(value.signature, case: :lower)
 
     PsbtUtils.serialize_kv(<<@psbt_in_partial_sig::big-size(8)>> <> key_data, val)
   end
 
-  defp serialize_kv(:sighash_type, value) when value != nil do
+  defp serialize_kv(:sighash_type, value) do
     PsbtUtils.serialize_kv(<<@psbt_in_sighash_type::big-size(8)>>, value)
   end
 
-  defp serialize_kv(:final_scriptsig, value) when value != nil do
+  defp serialize_kv(:final_scriptsig, value) do
     PsbtUtils.serialize_kv(
       <<@psbt_in_final_scriptsig::big-size(8)>>,
       Base.decode16!(value, case: :lower)
     )
   end
 
-  defp serialize_kv(:redeem_script, value) when value != nil do
+  defp serialize_kv(:redeem_script, value) do
     PsbtUtils.serialize_kv(
       <<@psbt_in_redeem_script::big-size(8)>>,
       Base.decode16!(value, case: :lower)
     )
   end
 
-  defp serialize_kv(:witness_script, value) when value != nil do
+  defp serialize_kv(:witness_script, value) do
     PsbtUtils.serialize_kv(
       <<@psbt_in_witness_script::big-size(8)>>,
       Base.decode16!(value, case: :lower)
     )
   end
 
-  defp serialize_kv(:final_scriptwitness, value) when value != nil do
+  defp serialize_kv(:final_scriptwitness, value) do
     PsbtUtils.serialize_kv(
       <<@psbt_in_final_scriptwitness::big-size(8)>>,
       Witness.serialize_witness([value])
     )
   end
 
-  defp serialize_kv(:bip32_derivation, value) when value != nil do
+  defp serialize_kv(:bip32_derivation, value) do
     key_data = Base.decode16!(value.public_key, case: :lower)
 
     val =
