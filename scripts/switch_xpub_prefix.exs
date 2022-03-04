@@ -14,6 +14,6 @@ new_prefix = tpub_pfx
 
 {:ok, xpub} = Bitcoinex.ExtendedKey.parse_extended_key(xpub_str)
 xpub = %{xpub | prefix: new_prefix}
-Bitcoinex.ExtendedKey.to_string(xpub)
+Bitcoinex.ExtendedKey.display_extended_key(xpub)
 # verify
 # Bitcoinex.ExtendedKey.parse_extended_key(xpub)
