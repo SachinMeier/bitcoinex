@@ -501,4 +501,100 @@ defmodule Bitcoinex.DescriptorTest do
                "sortedmulti(1,xpub661MyMwAqRbcFW31YEwpkMuc5THy2PSt5bDMsktWQcFF8syAmRUapSCGu8ED9W6oDMSgv6Zz8idoc4a6mr8BDzTJY47LJhkJ8UB7WEGuduB/1/0/*,xpub69H7F5d8KSRgmmdJg2KhpAK8SR3DjMwAdkxj3ZuxV27CprR9LgpeyGmXUbC6wb7ERfvrnKZjXoUmmDznezpbZb7ap6r1D3tgFxHmwMkQTPH/0/0/*)"
     end
   end
+
+  describe "get script type" do
+    test "p2pk" do
+      for t <- @pk_descriptors do
+        {:ok, desc} = Descriptor.parse_descriptor(d)
+        assert Descriptor.get_script_type(desc) == :p2pk
+      end
+    end
+
+    test "p2pkh" do
+      for t <- @pkh_descriptors do
+        {:ok, desc} = Descriptor.parse_descriptor(d)
+        assert Descriptor.get_script_type(desc) == :p2pkh
+      end
+    end
+
+    test "p2sh" do
+      for t <- @sh_descriptors do
+        {:ok, desc} = Descriptor.parse_descriptor(d)
+        assert Descriptor.get_script_type(desc) == :p2sh
+      end
+    end
+
+    test "p2wsh" do
+      for t <- @wsh_descriptors do
+        {:ok, desc} = Descriptor.parse_descriptor(d)
+        assert Descriptor.get_script_type(desc) == :p2wsh
+      end
+    end
+
+    test "p2wpkh" do
+      for t <- @wpkh_descriptors do
+        {:ok, desc} = Descriptor.parse_descriptor(d)
+        assert Descriptor.get_script_type(desc) == :p2wpkh
+      end
+    end
+
+    test "combo" do
+      for t <- @combo_descriptors do
+        {:ok, desc} = Descriptor.parse_descriptor(d)
+        assert Descriptor.get_script_type(desc) == :non_standard
+      end
+    end
+
+    test "multi" do
+      for t <- @multi_descriptors ++ @sorted_multi_descriptors do
+        {:ok, desc} = Descriptor.parse_descriptor(d)
+        assert Descriptor.get_script_type(desc) == :multi
+      end
+    end
+
+    test "addresses" do
+      # test each kind of address
+
+      # p2pkh
+      d = "addr(12KYrjTdVGjFMtaxERSk3gphreJ5US8aUP)"
+      {:ok, desc} = Descriptor.parse_descriptor(d)
+      assert Descriptor.get_script_type(desc) == :p2pkh
+
+      d = "mzBc4XEFSdzCDcTxAgf6EZXgsZWpztRhef"
+      {:ok, desc} = Descriptor.parse_descriptor(d)
+      assert Descriptor.get_script_type(desc) == :p2pkh
+
+      # p2sh
+      d = "3NJZLcZEEYBpxYEUGewU4knsQRn1WM5Fkt"
+      {:ok, desc} = Descriptor.parse_descriptor(d)
+      assert Descriptor.get_script_type(desc) == :p2sh
+
+      d = "2MzQwSSnBHWHqSAqtTVQ6v47XtaisrJa1Vc"
+      {:ok, desc} = Descriptor.parse_descriptor(d)
+      assert Descriptor.get_script_type(desc) == :p2sh
+
+      #p2wpkh
+      d = "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4"
+      {:ok, desc} = Descriptor.parse_descriptor(d)
+      assert Descriptor.get_script_type(desc) == :p2wpkh
+
+      d = "tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx"
+      {:ok, desc} = Descriptor.parse_descriptor(d)
+      assert Descriptor.get_script_type(desc) == :p2wpkh
+
+      # p2wsh
+      d = "bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3"
+      {:ok, desc} = Descriptor.parse_descriptor(d)
+      assert Descriptor.get_script_type(desc) == :p2wsh
+
+      d = "tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sl5k7"
+      {:ok, desc} = Descriptor.parse_descriptor(d)
+      assert Descriptor.get_script_type(desc) == :p2wsh
+
+    end
+
+    test "raw" do
+      # TODO find scripts
+    end
+  end
 end

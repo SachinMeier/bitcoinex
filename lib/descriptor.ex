@@ -69,7 +69,38 @@ defmodule Bitcoinex.Descriptor do
     def from_key(dkey = %__MODULE__{}), do: dkey
     def from_key(pk = %Point{}), do: %__MODULE__{key: pk}
     def from_key(xkey = %ExtendedKey{}), do: %__MODULE__{key: xkey}
-    def from_key(_), do: {:error, "invalid key"}
+    def from_key(str_data) do
+      case String.first(str_data) do
+        # extended key
+        "x" ->
+          {:ok, xkey} = ExtendedKey.parse_extended_key(str_data)
+          from_key(xkey)
+
+        # public key
+        "0" ->
+          # since uncompressed pubkeys are not allowed for sh and wpkh,
+          # we disallow them universally
+          if String.length(str_data) != 66 do
+            {:error, "public key must be compressed (33bytes)"}
+          else
+            {:ok, pk} = Point.parse_public_key(str_data)
+            from_key(pk)
+          end
+
+        # private key
+        _ ->
+          case PrivateKey.parse_wif(str_data) do
+            {:ok, sk, network, compressed} ->
+              if compressed do
+                from_key({sk, network})
+              else
+                {:error, "wif must signal for compressed pubkey"}
+              end
+
+            _ -> {:error, "invalid key"}
+          end
+      end
+    end
 
     def from_key(sk = %PrivateKey{}, network), do: from_private_key(sk, network)
 
@@ -107,6 +138,7 @@ defmodule Bitcoinex.Descriptor do
       }
     end
 
+    @spec serialize(t()) :: binary
     def serialize(desc = %__MODULE__{key: key}) do
       fp = Base.encode16(desc.parent_fingerprint, case: :lower)
       {:ok, anc_path} = DerivationPath.to_string(desc.ancestor_path)
@@ -128,7 +160,6 @@ defmodule Bitcoinex.Descriptor do
     defp serialize_key(key = %Point{}), do: Point.sec(key) |> Base.encode16(case: :lower)
 
     defp handle_slashes(""), do: ""
-
     defp handle_slashes(deriv_str) do
       case String.split_at(deriv_str, -1) do
         {deriv, "/"} -> "/" <> deriv
@@ -136,6 +167,7 @@ defmodule Bitcoinex.Descriptor do
       end
     end
 
+    @spec parse(binary) :: {:ok, t()} | {:error, String.t()}
     def parse(hex_data) do
       try do
         {:ok, parser(hex_data)}
@@ -144,7 +176,7 @@ defmodule Bitcoinex.Descriptor do
       end
     end
 
-    def parser(hex_data) do
+    defp parser(hex_data) do
       if String.first(hex_data) == "[" do
         {:ok, fp, anc_path, remaining} = parse_ancestor_data(hex_data)
         {:ok, key, desc_path} = parse_key_data(remaining)
@@ -237,6 +269,7 @@ defmodule Bitcoinex.Descriptor do
     :data
   ]
 
+  @spec parse_descriptor(binary) :: {:ok, t()} | {:error, String.t()}
   def parse_descriptor(desc) do
     try do
       parser(desc)
@@ -245,7 +278,7 @@ defmodule Bitcoinex.Descriptor do
     end
   end
 
-  def parser(desc) do
+  defp parser(desc) do
     case split_descriptor(desc) do
       # sh & wsh can be recursive
       {:ok, :sh, rest} ->
@@ -279,7 +312,7 @@ defmodule Bitcoinex.Descriptor do
     end
   end
 
-  def split_descriptor(desc) do
+  defp split_descriptor(desc) do
     [s_type, rest] = String.split(desc, "(", parts: 2)
 
     case String.split_at(rest, -1) do
@@ -342,8 +375,9 @@ defmodule Bitcoinex.Descriptor do
     to_string(script_type) <> "(#{data})"
   end
 
-  def get_script_type(descriptor) do
-    case descriptor.script_type do
+  @spec get_script_type(t()) :: Script.script_type()
+  def get_script_type(%__MODULE__{script_type: script_type, data: data}) do
+    case script_type do
       :pk ->
         :p2pk
 
@@ -367,11 +401,14 @@ defmodule Bitcoinex.Descriptor do
 
       :sortedmulti ->
         :multi
-        # TODO
-        # :addr ->
-        # return exact address script type
-        # :raw ->
-        # return exact script type
+
+      :addr ->
+        {:ok, script, _} = Script.from_address(data)
+        Script.get_script_type(script)
+
+      :raw ->
+        {:ok, script} = Script.parse_script(data)
+        Script.get_script_type(script)
     end
   end
 
@@ -483,4 +520,41 @@ defmodule Bitcoinex.Descriptor do
       {:error, _msg} -> {:error, "invalid script"}
     end
   end
+
+
+
+  def to_address(%__MODULE__{script_type: script_type, data: data}, network, idx) do
+    case script_type do
+      :pk ->
+        {:ok, Point.serialize_public_key(data)}
+
+      :pkh ->
+        to_p2pkh_address(data, network, idx)
+
+    end
+  end
+
+  def to_p2pkh_address(%DKey{key: pk = %Point{}}, network, _idx) do
+    {:ok, script} = Script.public_key_to_p2pkh(pk)
+    Script.to_address(script, network)
+  end
+  def to_p2pkh_address(%DKey{key: {sk = %PrivateKey{}, network}}, network2, _idx) do
+    if network != network2 do
+      {:error, "private key network does not match provided network"}
+    else
+      sk
+      |> PrivateKey.to_point()
+      |> to_p2pkh_address(network)
+    end
+  end
+
+  def to_p2pkh_address(%DKey{key: xkey = %ExtendedKey{}, descendant_path: deriv_path}, network, idx) do
+
+    ExtendedKey.derive_child_key(idx)
+  end
+
+  def to_p2sh_address() do
+
+  end
+
 end

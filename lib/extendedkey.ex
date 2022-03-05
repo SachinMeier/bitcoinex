@@ -26,7 +26,11 @@ defmodule Bitcoinex.ExtendedKey do
     @type non_hardened_child_num ::
             unquote(@min_non_hardened_child_num)..unquote(@max_non_hardened_child_num)
 
-    @type child_num :: hardened_child_num | non_hardened_child_num
+    @type wildcard :any | :anyh
+
+    @wildcards [:any, :anyh]
+
+    @type child_num :: hardened_child_num | non_hardened_child_num | wildcard
 
     @type t :: %__MODULE__{
             child_nums: list(child_num)
@@ -124,6 +128,31 @@ defmodule Bitcoinex.ExtendedKey do
 
     def add(%__MODULE__{child_nums: path1}, %__MODULE__{child_nums: path2}),
       do: %__MODULE__{child_nums: path1 ++ path2}
+
+    # TODO make this when a defguard
+    @spec at_index(t(), non_neg_integer()) :: {:ok, t()} | {:error, String.t()}
+    def at_index(%__MODULE__{child_nums: path}, index)
+      when is_integer(index) and index >= 0 and index < @max_hardened_child_num do
+      {head, last} = Enum.split(path, -1)
+      cond do
+        Enum.any?(head, fn lvl -> lvl in @wildcards end) ->
+          {:error, "internal wildcard in derivation path"}
+
+        last not in @wildcards ->
+          {:error, "last level is not a wildcard"}
+
+        true ->
+          {:ok, %__MODULE__{child_nums: head ++ [index]}}
+      end
+    end
+
+    @spec at_index(t(), child_num) :: {:ok, t()} | {:error, String.t()}
+    def add_level(%__MODULE__{child_nums: path}, index)
+      when is_integer(index) and index >= 0 and index < @max_hardened_child_num do
+      %__MODULE__{child_nums: path ++ [index]}
+    end
+
+    def add_level(%__MODULE__{child_nums: path}, any) when any in @wildcards, do: %__MODULE__{child_nums: path ++ [any]}
   end
 
   @type t :: %__MODULE__{
