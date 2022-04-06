@@ -3,12 +3,12 @@
 # a CSV file of format: path, script, address
 # to the output_file
 
-change = 0 # set 0 for recv addresses, 1 for change addresses
-network = :regtest # :testnet or :regtest
+change = 1 # set 0 for recv addresses, 1 for change addresses
+network = :mainnet # :testnet or :regtest
 start_idx = 0
-end_idx = 20
+end_idx = 180
 xpub_str = "xpub..."
-output_file = "addresses.txt"
+output_file = "addresses-change.txt"
 
 {:ok, file} = File.open(output_file, [:write])
 {:ok, xpub} = Bitcoinex.ExtendedKey.parse_extended_key(xpub_str)
