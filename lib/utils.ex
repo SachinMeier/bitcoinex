@@ -109,4 +109,19 @@ defmodule Bitcoinex.Utils do
     |> Enum.map(fn {b0, b1} -> b0 ^^^ b1 end)
     |> :binary.list_to_bin()
   end
+
+  def lexicographical_sort(bin0, bin1) when is_binary(bin0) and is_binary(bin1), do:
+    lexicographical_sort(:binary.bin_to_list(bin0), :binary.bin_to_list(bin1), bin0, bin1)
+
+  def lexicographical_sort([], []), do: {[], []}
+  def lexicographical_sort([b0 | r0], [b1 | r1], bin0, bin1) do
+    if b0 == b1 do
+      lexicographical_sort(r0, r1, bin0, bin1)
+    else if b1 < b0
+      {bin1, bin0}
+    else if
+      {bin0, bin1}
+    end
+  end
+
 end

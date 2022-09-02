@@ -611,6 +611,17 @@ defmodule Bitcoinex.Script do
   def create_p2tr(q = %Point{}), do: create_witness_scriptpubkey(1, Point.x_bytes(q))
   def create_p2tr(_), do: {:error, "public key must be #{@tapkey_length}-bytes"}
 
+  def construct_p2tr(p = %Point{}, script_tree = %TapNode{}) do
+    {_, root} = Taproot.merkelize_script_tree(script_tree)
+    case Taproot.tweak_pubkey(p, root) do
+      {:error, msg} ->
+        {:error, msg}
+
+      q ->
+        create_p2tr(q)
+    end
+  end
+
   @doc """
   	create_p2sh_p2wpkh creates a p2wsh script using the passed 20-byte public key hash
   """
