@@ -1,0 +1,9 @@
+alias Bitcoinex.ExtendedKey
+
+xprv_str = "xprv"
+{:ok, xprv} = Bitcoinex.ExtendedKey.parse_extended_key(xprv_str)
+{:ok, xpub} = Bitcoinex.ExtendedKey.to_extended_public_key(xprv)
+Bitcoinex.ExtendedKey.to_string(xpub)
+xpub661MyMwAqRbcEiZgWU634oQ6upVF1QTCZBXU2o8rYS7cNYAVTwEKzbPLieQYhiLM4MgQN9xXEv9j7LY5nkdsuYagdNkgXCNhconisu6hYVr
+
+zpub6rGRpDY94JkHftD8zyh4SvJDbF35KBPxQVpJEEHKqXh9dWJMrJdTwKGhoCeV4hSxt9DkktVza1Tx4A8HEgFYw8f7g5n3f65NvF2V3rRUxUw

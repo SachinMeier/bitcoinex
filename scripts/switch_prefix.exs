@@ -1,0 +1,1 @@
+zpub_str = "zpub6rGRpDY94JkHftD8zyh4SvJDbF35KBPxQVpJEEHKqXh9dWJMrJdTwKGhoCeV4hSxt9DkktVza1Tx4A8HEgFYw8f7g5n3f65NvF2V3rRUxUw"
