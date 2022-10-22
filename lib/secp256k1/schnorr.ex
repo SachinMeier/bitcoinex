@@ -46,13 +46,17 @@ defmodule Bitcoinex.Secp256k1.Schnorr do
             |> :binary.decode_unsigned()
             |> Math.modulo(@n)
 
-          sig_s =
-            (k.d + d.d * e)
-            |> Math.modulo(@n)
+          sig_s = calculate_s(k, d, e)
 
           {:ok, %Signature{r: r_point.x, s: sig_s}}
         end
     end
+  end
+
+  @spec calculate_s(PrivateKey.t(), PrivateKey.t(), non_neg_integer) :: non_neg_integer
+  def calculate_s(aux, privkey, e) do
+    (aux.d + privkey.d * e)
+    |> Math.modulo(@n)
   end
 
   defp tagged_hash_aux(aux), do: Utils.tagged_hash("BIP0340/aux", aux)
@@ -82,4 +86,42 @@ defmodule Bitcoinex.Secp256k1.Schnorr do
 
     !Point.is_inf(r_point) && Point.has_even_y(r_point) && r_point.x == r
   end
+
+  @doc """
+    naive implementation of partial signature generation. This should only be used when all parties
+    are trusted.
+    privkey is the private key of the signing party
+    pubkey is the combined public key of all signers
+    z is the message hash being signed
+    priv_aux is the private nonce being used
+    pub_aux is the combined public key of all nonce public keys
+  """
+  @spec naive_partial_sign(PrivateKey.t(), Point.t(), non_neg_integer, PrivateKey.t(), Point.t()) ::
+          non_neg_integer
+  def naive_partial_sign(privkey, pubkey, z, priv_aux, pub_aux) do
+    case PrivateKey.validate(privkey) do
+      {:error, msg} ->
+        {:error, msg}
+
+      {:ok, privkey} ->
+        z_bytes = Utils.int_to_big(z, 32)
+        d = Secp256k1.force_even_y(privkey)
+
+        e =
+          tagged_hash_challenge(Point.x_bytes(pub_aux) <> Point.x_bytes(pubkey) <> z_bytes)
+          |> :binary.decode_unsigned()
+          |> Math.modulo(@n)
+
+        calculate_s(priv_aux, d, e)
+    end
+  end
+
+  def combine_partial_signatures(partial_sigs) do
+    sum_signatures(partial_sigs, 0)
+  end
+
+  defp sum_signatures([], sum), do: sum
+  defp sum_signatures([next | tail], sum), do: sum_signatures(tail, next+sum)
+
+
 end
