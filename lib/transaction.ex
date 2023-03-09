@@ -82,6 +82,7 @@ defmodule Bitcoinex.Transaction do
       else
         witness_bytes
       end
+
     legacy_bytes + ceil(witness_bytes / 4)
   end
 
@@ -528,6 +529,7 @@ defmodule Bitcoinex.Transaction.Witness do
 
   @spec serialize_witness(list(Witness.t())) :: binary
   def serialize_witness(nil), do: serialize_witness([])
+
   def serialize_witness(witnesses) do
     serialize_witness(witnesses, <<>>)
   end
