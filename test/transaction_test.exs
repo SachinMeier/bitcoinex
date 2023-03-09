@@ -48,10 +48,10 @@ defmodule Bitcoinex.TransactionTest do
     },
     # single taproot witness item
     # 9ba9d23c3e21d1d2f3fd658cd60043553c80cdae7885b5ee29c10cda4b5b715f
-    # %{
-    #   tx_hex: "01000000000101b5cee87f1a60915c38bb0bc26aaf2b67be2b890bbc54bb4be1e40272e0d2fe0b0000000000ffffffff025529000000000000225120106daad8a5cb2e6fc74783714273bad554a148ca2d054e7a19250e9935366f3033760000000000002200205e6d83c44f57484fd2ef2a62b6d36cdcd6b3e06b661e33fd65588a28ad0dbe060141df9d1bfce71f90d68bf9e9461910b3716466bfe035c7dbabaa7791383af6c7ef405a3a1f481488a91d33cd90b098d13cb904323a3e215523aceaa04e1bb35cdb0100000000",
-    #   vbytes: 155,
-    # },
+    %{
+      tx_hex: "01000000000101b5cee87f1a60915c38bb0bc26aaf2b67be2b890bbc54bb4be1e40272e0d2fe0b0000000000ffffffff025529000000000000225120106daad8a5cb2e6fc74783714273bad554a148ca2d054e7a19250e9935366f3033760000000000002200205e6d83c44f57484fd2ef2a62b6d36cdcd6b3e06b661e33fd65588a28ad0dbe060141df9d1bfce71f90d68bf9e9461910b3716466bfe035c7dbabaa7791383af6c7ef405a3a1f481488a91d33cd90b098d13cb904323a3e215523aceaa04e1bb35cdb0100000000",
+      vbytes: 155,
+    },
     # multiple taproot witness items
     # 0bfed2e07202e4e14bbb54bc0b892bbe672baf6ac20bbb385c91601a7fe8ceb5
     %{
@@ -678,10 +678,12 @@ defmodule Bitcoinex.TransactionTest do
   end
 
   describe "vbyte_size/1" do
-    for t <- @txs_for_size_testing do
-      {:ok, tx} = Transaction.decode(t.tx_hex)
-      vbytes = Transaction.vbyte_size(tx)
-      assert vbytes == t.vbytes
+    test "vbyte calculation" do
+      for t <- @txs_for_size_testing do
+        {:ok, tx} = Transaction.decode(t.tx_hex)
+        vbytes = Transaction.vbyte_size(tx)
+        assert vbytes == t.vbytes
+      end
     end
   end
 
