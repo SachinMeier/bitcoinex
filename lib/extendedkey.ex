@@ -103,7 +103,9 @@ defmodule Bitcoinex.ExtendedKey do
           raise(ArgumentError, message: "index cannot be greater than #{@max_hardened_child_num}")
 
         lvl < @min_non_hardened_child_num ->
-          raise(ArgumentError, message: "index cannot be less than #{@min_non_hardened_child_num}")
+          raise(ArgumentError,
+            message: "index cannot be less than #{@min_non_hardened_child_num}"
+          )
 
         true ->
           lvlbin =
@@ -215,8 +217,7 @@ defmodule Bitcoinex.ExtendedKey do
           parent_fingerprint: binary,
           child_num: binary,
           chaincode: binary,
-          key: binary,
-          checksum: binary
+          key: binary
         }
 
   @enforce_keys [
@@ -225,8 +226,7 @@ defmodule Bitcoinex.ExtendedKey do
     :parent_fingerprint,
     :child_num,
     :chaincode,
-    :key,
-    :checksum
+    :key
   ]
 
   defstruct [
@@ -235,23 +235,55 @@ defmodule Bitcoinex.ExtendedKey do
     :parent_fingerprint,
     :child_num,
     :chaincode,
-    :key,
-    :checksum
+    :key
   ]
 
+  # Single Sig
+  # xpub
   @xpub_pfx <<0x04, 0x88, 0xB2, 0x1E>>
+  # xprv
   @xprv_pfx <<0x04, 0x88, 0xAD, 0xE4>>
+  # tpub
   @tpub_pfx <<0x04, 0x35, 0x87, 0xCF>>
+  # tprv
   @tprv_pfx <<0x04, 0x35, 0x83, 0x94>>
-
+  # ypub
+  @ypub_pfx <<0x04, 0x9D, 0x7C, 0xB2>>
+  # yprv
+  @yprv_pfx <<0x04, 0x9D, 0x78, 0x78>>
+  # upub
+  @upub_pfx <<0x04, 0x4A, 0x52, 0x62>>
+  # uprv
+  @uprv_pfx <<0x04, 0x4A, 0x4E, 0x28>>
+  # zpub
+  @zpub_pfx <<0x04, 0xB2, 0x47, 0x46>>
+  # zprv
+  @zprv_pfx <<0x04, 0xB2, 0x43, 0x0C>>
+  # vpub
+  @vpub_pfx <<0x04, 0x5F, 0x1C, 0xF6>>
+  # vprv
+  @vprv_pfx <<0x04, 0x5F, 0x18, 0xBC>>
+  # Multisig (no BIP or derivation path, from SLIP-132)
+  # @y_pub_pfx <<0x02,0x95,0xb4,0x3f>> #Ypub
+  # @y_prv_pfx <<0x02,0x95,0xb0,0x05>> #Yprv
+  # @z_pub_pfx <<0x02,0xaa,0x7e,0xd3>> #Zpub
+  # @z_prv_pfx <<0x02,0xaa,0x7a,0x99>> #Zprv
   @prv_prefixes [
     @xprv_pfx,
-    @tprv_pfx
+    @tprv_pfx,
+    @yprv_pfx,
+    @uprv_pfx,
+    @zprv_pfx,
+    @vprv_pfx
   ]
 
   @pub_prefixes [
     @xpub_pfx,
-    @tpub_pfx
+    @tpub_pfx,
+    @ypub_pfx,
+    @upub_pfx,
+    @zpub_pfx,
+    @vpub_pfx
   ]
 
   @all_prefixes @prv_prefixes ++ @pub_prefixes
@@ -262,26 +294,95 @@ defmodule Bitcoinex.ExtendedKey do
       :xprv -> @xprv_pfx
       :tpub -> @tpub_pfx
       :tprv -> @tprv_pfx
+      :ypub -> @ypub_pfx
+      :yprv -> @yprv_pfx
+      :upub -> @upub_pfx
+      :uprv -> @uprv_pfx
+      :zpub -> @zpub_pfx
+      :zprv -> @zprv_pfx
+      :vpub -> @vpub_pfx
+      :vprv -> @vprv_pfx
     end
+  end
+
+  defp bip44 do
+    [
+      @xpub_pfx,
+      @xprv_pfx,
+      @tpub_pfx,
+      @tprv_pfx
+    ]
+  end
+
+  defp bip49 do
+    [
+      @ypub_pfx,
+      @yprv_pfx,
+      @upub_pfx,
+      @uprv_pfx
+    ]
+  end
+
+  defp bip84 do
+    [
+      @zpub_pfx,
+      @zprv_pfx,
+      @vpub_pfx,
+      @vprv_pfx
+    ]
   end
 
   defp prv_to_pub_prefix(prv_pfx) do
     case prv_pfx do
       @xprv_pfx -> @xpub_pfx
       @tprv_pfx -> @tpub_pfx
+      @yprv_pfx -> @ypub_pfx
+      @uprv_pfx -> @upub_pfx
+      @zprv_pfx -> @zpub_pfx
+      @vprv_pfx -> @vpub_pfx
     end
   end
 
   defp mainnet_prefixes do
     [
       @xpub_pfx,
-      @xprv_pfx
+      @xprv_pfx,
+      @ypub_pfx,
+      @yprv_pfx,
+      @zpub_pfx,
+      @zprv_pfx
     ]
   end
 
   @spec network_from_prefix(binary) :: atom
-  defp network_from_prefix(prefix) do
+  def network_from_prefix(prefix) do
     if prefix in mainnet_prefixes(), do: :mainnet, else: :testnet
+  end
+
+  @spec script_type_from_prefix(binary) :: atom
+  def script_type_from_prefix(prefix) do
+    cond do
+      prefix in bip44() -> :p2pkh
+      # p2sh or p2sh_p2wpkh?
+      prefix in bip49() -> :p2sh_p2wpkh
+      prefix in bip84() -> :p2wpkh
+    end
+  end
+
+  @spec switch_prefix(t(), atom) :: t() | {:error, String.t()}
+  def switch_prefix(xkey = %__MODULE__{prefix: pfx}, new_pfx) do
+    new_pfx_bin = pfx_atom_to_bin(new_pfx)
+
+    cond do
+      new_pfx_bin in @prv_prefixes and pfx in @prv_prefixes ->
+        %__MODULE__{xkey | prefix: new_pfx_bin}
+
+      new_pfx_bin in @pub_prefixes and pfx in @pub_prefixes ->
+        %__MODULE__{xkey | prefix: new_pfx_bin}
+
+      true ->
+        {:error, "switching between public and private prefixes will result in a useless key"}
+    end
   end
 
   @doc """
@@ -350,7 +451,7 @@ defmodule Bitcoinex.ExtendedKey do
         xkey =
           <<prefix::binary-size(4), depth::binary-size(1), parent_fingerprint::binary-size(4),
             child_num::binary-size(4), chaincode::binary-size(32), key::binary-size(33),
-            checksum::binary-size(4)>>
+            _checksum::binary-size(4)>>
       ) do
     cond do
       prefix not in @all_prefixes ->
@@ -373,8 +474,7 @@ defmodule Bitcoinex.ExtendedKey do
                parent_fingerprint: parent_fingerprint,
                child_num: child_num,
                chaincode: chaincode,
-               key: key,
-               checksum: checksum
+               key: key
              }}
         end
     end
@@ -696,16 +796,16 @@ defmodule Bitcoinex.ExtendedKey do
   """
   @spec derive_extended_key(t() | binary, DerivationPath.t()) :: {:ok, t()} | {:error, String.t()}
   def derive_extended_key(xkey = %__MODULE__{}, %DerivationPath{child_nums: path}),
-    do: rderive_extended_key(xkey, path)
+    do: derive_extended_key(xkey, path)
 
   def derive_extended_key(seed, %DerivationPath{child_nums: path}) do
     {:ok, xkey} = seed_to_master_private_key(seed)
-    rderive_extended_key(xkey, path)
+    derive_extended_key(xkey, path)
   end
 
-  defp rderive_extended_key(xkey = %__MODULE__{}, []), do: {:ok, xkey}
+  def derive_extended_key(xkey = %__MODULE__{}, []), do: {:ok, xkey}
 
-  defp rderive_extended_key(xkey = %__MODULE__{}, [p | rest]) do
+  def derive_extended_key(xkey = %__MODULE__{}, [p | rest]) do
     try do
       case p do
         # if asterisk (:any) is in path, return the immediate parent xkey
@@ -715,7 +815,7 @@ defmodule Bitcoinex.ExtendedKey do
         # otherwise it is an integer, so derive child at that index.
         _ ->
           case derive_child_key(xkey, p) do
-            {:ok, child_key} -> rderive_extended_key(child_key, rest)
+            {:ok, child_key} -> derive_extended_key(child_key, rest)
             {:error, msg} -> {:error, msg}
           end
       end
