@@ -205,6 +205,122 @@ defmodule Bitcoinex.SilentPayments do
     end
   end
 
+  @doc """
+  create_output_pubkey derives a single silent payment taproot output key for a recipient
+  (sender side).
+
+  Needs both recipient public keys: `b_scan` (for ECDH) and `b_spend` (added in). `k` is the
+  output index within the recipient group. Returns `P_k = B_spend + t_k·G`; take
+  `Bitcoinex.Secp256k1.Point.x_bytes/1` of it for the x-only taproot output key.
+  """
+  @spec create_output_pubkey(
+          PrivateKey.t(),
+          Point.t(),
+          Point.t(),
+          <<_::256>>,
+          non_neg_integer()
+        ) :: {:ok, Point.t()} | {:error, String.t()}
+  def create_output_pubkey(
+        %PrivateKey{} = a_sum,
+        %Point{} = b_scan,
+        %Point{} = b_spend,
+        <<input_hash::binary-size(32)>>,
+        k
+      ) do
+    with {:ok, ecdh} <- shared_secret(a_sum, b_scan, input_hash),
+         {:ok, {_t_k, p_k}} <- derive_output(ecdh, b_spend, k) do
+      {:ok, p_k}
+    end
+  end
+
+  @doc """
+  scan_output derives the per-output tweak and candidate output point for index `k`
+  (receiver side).
+
+  Returns `{t_k, P_k}`. The caller compares `Point.x_bytes(p_k)` against the transaction's
+  taproot outputs; on a direct hit the output is spendable with `spending_privkey(b_spend,
+  t_k, nil)`. With no direct hit, the caller checks labels via `output_label_candidates/2`.
+  The caller drives the `k` loop, incrementing on each match.
+  """
+  @spec scan_output(PrivateKey.t(), Point.t(), Point.t(), <<_::256>>, non_neg_integer()) ::
+          {:ok, {PrivateKey.t(), Point.t()}} | {:error, String.t()}
+  def scan_output(
+        %PrivateKey{} = b_scan,
+        %Point{} = a_sum,
+        %Point{} = b_spend,
+        <<input_hash::binary-size(32)>>,
+        k
+      ) do
+    with {:ok, ecdh} <- shared_secret(b_scan, a_sum, input_hash) do
+      derive_output(ecdh, b_spend, k)
+    end
+  end
+
+  @doc """
+  spending_privkey derives the private key `d` for a found silent payment output:
+  `d = (b_spend + t_k + label_tweak?) mod n`.
+
+  Pass the label tweak (from `label_tweak/2`) when the output matched a label, or `nil` for
+  an unlabeled output. The BIP341 output is then spent with `d` (the signer negates to
+  even-Y as usual).
+  """
+  @spec spending_privkey(PrivateKey.t(), PrivateKey.t(), PrivateKey.t() | nil) ::
+          {:ok, PrivateKey.t()} | {:error, String.t()}
+  def spending_privkey(b_spend, t_k, label \\ nil)
+
+  def spending_privkey(%PrivateKey{d: b_spend}, %PrivateKey{d: t_k}, label) do
+    label_d =
+      case label do
+        nil -> 0
+        %PrivateKey{d: d} -> d
+      end
+
+    case Math.modulo(b_spend + t_k + label_d, @n) do
+      0 -> {:error, "spending private key is zero"}
+      d -> PrivateKey.new(d)
+    end
+  end
+
+  @doc """
+  create_labeled_spend_pubkey computes the labeled spend public key
+  `B_m = B_spend + label_point(m)` to publish in a labeled silent payment address.
+
+  `m = 0` is the reserved change label and MUST NOT be handed out as a receive address.
+  """
+  @spec create_labeled_spend_pubkey(Point.t(), PrivateKey.t(), non_neg_integer()) ::
+          {:ok, Point.t()} | {:error, String.t()}
+  def create_labeled_spend_pubkey(%Point{} = b_spend, %PrivateKey{} = b_scan, m) do
+    with {:ok, label_point} <- label_point(b_scan, m) do
+      sum = Math.add(b_spend, label_point)
+
+      if Point.is_inf(sum) do
+        {:error, "labeled spend pubkey is the point at infinity"}
+      else
+        {:ok, sum}
+      end
+    end
+  end
+
+  @doc """
+  output_label_candidates returns the candidate label points for an unmatched taproot output.
+
+  Given the `p_k` from `scan_output/5` and an x-only `output` that did not match `p_k`
+  directly, returns `[output - p_k, -output - p_k]` (both parities of the output point, per
+  BIP-352's "negate output and check a second time"). The caller looks each candidate up in
+  its precomputed `label_point ⇒ m` table; a hit means the output is the labeled payment
+  `p_k + candidate`, spendable with `spending_privkey(b_spend, t_k, label_tweak(b_scan, m))`.
+  """
+  @spec output_label_candidates(Point.t(), <<_::256>>) ::
+          {:ok, [Point.t()]} | {:error, String.t()}
+  def output_label_candidates(%Point{} = p_k, <<output::binary-size(32)>>) do
+    with {:ok, even_pt} <- Point.lift_x(output) do
+      odd_pt = Point.negate(even_pt)
+      {:ok, [subtract(even_pt, p_k), subtract(odd_pt, p_k)]}
+    end
+  end
+
+  def output_label_candidates(%Point{}, _output), do: {:error, "output must be 32 bytes"}
+
   # A 32-byte hash is a valid secp256k1 scalar when it is neither 0 nor >= n.
   # Note: PrivateKey.new/1 only rejects d >= n, so this guard is what enforces
   # the non-zero requirement before the callers build a PrivateKey from the hash.
@@ -242,4 +358,26 @@ defmodule Bitcoinex.SilentPayments do
       err -> err
     end
   end
+
+  # Shared by create_output_pubkey and scan_output: derive t_k, then P_k = B_spend + t_k·G.
+  defp derive_output(ecdh, b_spend, k) do
+    with {:ok, t_k} <- shared_secret_tweak(ecdh, k),
+         {:ok, p_k} <- add_tweak(b_spend, t_k) do
+      {:ok, {t_k, p_k}}
+    end
+  end
+
+  # base + tweak·G, rejecting the (astronomically unlikely) point at infinity.
+  defp add_tweak(%Point{} = base, %PrivateKey{} = tweak) do
+    sum = Math.add(base, PrivateKey.to_point(tweak))
+
+    if Point.is_inf(sum) do
+      {:error, "output is the point at infinity"}
+    else
+      {:ok, sum}
+    end
+  end
+
+  # P - Q = P + (-Q)
+  defp subtract(p, q), do: Math.add(p, Point.negate(q))
 end

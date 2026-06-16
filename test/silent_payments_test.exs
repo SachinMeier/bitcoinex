@@ -18,6 +18,10 @@ defmodule Bitcoinex.SilentPaymentsTest do
   @txid2 "a1075db55d416d3ca199f55b6084e2115b9345e16c5cf302fc80e9d5fbf5d48d"
   @shared_secret "028158aff7d61ea66b2fa7f555bc3c5937d1debbde16423d630f9aa7943e14d80d"
   @tweak_0 "f438b40179a3c4262de12986c0e6cce0634007cdc79c1dcd3e20b9ebc2e7eef6"
+  # Recipient (== receiver) spend key + the resulting first output, same vector.
+  @spend_pub "025cc9856d6f8375350e123978daac200c260cb5b5ae83106cab90484dcd8fcf36"
+  @spend_priv "9d6ad855ce3417ef84e836892e5a56392bfba05fa5d97ccea30e266f540e08b3"
+  @output_0 "3e9fce73d4e77a4809908e3c3a2e54ee147b9312dc5044a193d1fc85de46e3c1"
 
   defp privkey(hex),
     do: %PrivateKey{d: hex |> Base.decode16!(case: :lower) |> :binary.decode_unsigned()}
@@ -189,6 +193,100 @@ defmodule Bitcoinex.SilentPaymentsTest do
     for hex <- [@sk1, @sk2] do
       k = privkey(hex)
       assert SilentPayments.sum_input_privkeys([k], []) == {:ok, Secp256k1.force_even_y(k)}
+    end
+  end
+
+  defp vector_setup do
+    {:ok, a_sum} = SilentPayments.sum_input_privkeys([], [privkey(@sk1), privkey(@sk2)])
+    a_pub = PrivateKey.to_point(a_sum)
+    outpoint_l = Enum.min([outpoint(@txid1, 0), outpoint(@txid2, 0)])
+    {:ok, input_hash} = SilentPayments.input_hash(outpoint_l, a_pub)
+    {a_sum, a_pub, input_hash}
+  end
+
+  describe "create_output_pubkey/5 (sender)" do
+    test "derives the BIP-352 vector's taproot output key" do
+      {a_sum, _a_pub, input_hash} = vector_setup()
+
+      {:ok, p} =
+        SilentPayments.create_output_pubkey(
+          a_sum,
+          point(@scan_pub),
+          point(@spend_pub),
+          input_hash,
+          0
+        )
+
+      assert Point.x_hex(p) == @output_0
+    end
+  end
+
+  describe "scan_output/5 (receiver)" do
+    test "derives the per-output tweak and candidate point matching the vector" do
+      {_a_sum, a_pub, input_hash} = vector_setup()
+
+      {:ok, {t_k, p_k}} =
+        SilentPayments.scan_output(privkey(@scan_priv), a_pub, point(@spend_pub), input_hash, 0)
+
+      assert PrivateKey.to_hex(t_k) == @tweak_0
+      assert Point.x_hex(p_k) == @output_0
+    end
+  end
+
+  describe "spending_privkey/3" do
+    test "unlabeled: d = (b_spend + t_k) mod n and d*G matches the output" do
+      {_a_sum, a_pub, input_hash} = vector_setup()
+
+      {:ok, {t_k, _p_k}} =
+        SilentPayments.scan_output(privkey(@scan_priv), a_pub, point(@spend_pub), input_hash, 0)
+
+      {:ok, d} = SilentPayments.spending_privkey(privkey(@spend_priv), t_k, nil)
+      assert Point.x_hex(PrivateKey.to_point(d)) == @output_0
+    end
+
+    test "labeled: adds the label tweak" do
+      b_spend = privkey(@spend_priv)
+      t_k = %PrivateKey{d: 7}
+      label = %PrivateKey{d: 11}
+      {:ok, d} = SilentPayments.spending_privkey(b_spend, t_k, label)
+      assert d.d == Secp256k1.Math.modulo(b_spend.d + 7 + 11, Secp256k1.Params.curve().n)
+    end
+
+    test "omitting the label equals passing nil" do
+      b_spend = privkey(@spend_priv)
+      t_k = %PrivateKey{d: 42}
+
+      assert SilentPayments.spending_privkey(b_spend, t_k) ==
+               SilentPayments.spending_privkey(b_spend, t_k, nil)
+    end
+  end
+
+  describe "create_labeled_spend_pubkey/3" do
+    test "B_m = B_spend + label_point(m)" do
+      b_scan = privkey(@scan_priv)
+      b_spend = point(@spend_pub)
+      {:ok, label_point} = SilentPayments.label_point(b_scan, 1)
+      {:ok, b_m} = SilentPayments.create_labeled_spend_pubkey(b_spend, b_scan, 1)
+      assert b_m == Secp256k1.Math.add(b_spend, label_point)
+    end
+  end
+
+  describe "output_label_candidates/2" do
+    test "surfaces the label point for a labeled output regardless of output parity" do
+      b_scan = privkey(@scan_priv)
+      p_k = point(@spend_pub)
+      {:ok, label_point} = SilentPayments.label_point(b_scan, 3)
+      labeled_output = Secp256k1.Math.add(p_k, label_point)
+
+      {:ok, candidates} =
+        SilentPayments.output_label_candidates(p_k, Point.x_bytes(labeled_output))
+
+      assert Enum.any?(candidates, &(&1.x == label_point.x and &1.y == label_point.y))
+    end
+
+    test "rejects a non-32-byte output" do
+      assert {:error, _} =
+               SilentPayments.output_label_candidates(point(@spend_pub), <<0::size(248)>>)
     end
   end
 end
