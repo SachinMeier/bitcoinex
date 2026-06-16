@@ -261,6 +261,10 @@ defmodule Bitcoinex.SilentPaymentsVectorHarness do
   end
 
   # P2SH: eligible only if it wraps P2WPKH (scriptSig is a push of `0014<20>`); pubkey from witness.
+  # Note: like the BIP-352 reference, this does not verify hash160(redeemScript) == the scriptPubKey
+  # hash, nor that the redeem key-hash matches the witness key — sufficient for the vectors (invalid
+  # P2SH inputs are filtered by the scriptSig shape and the compressed-key check), but a real scanner
+  # validating untrusted inputs should also check those hashes.
   defp do_extract(<<0xA9, 0x14, _h::binary-size(20), 0x87>>, script_sig, witness) do
     case script_sig do
       <<_len, 0x00, 0x14, _kh::binary-size(20)>> -> pubkey_from_witness(witness)

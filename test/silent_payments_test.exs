@@ -233,6 +233,18 @@ defmodule Bitcoinex.SilentPaymentsTest do
     end
   end
 
+  describe "input_hash size guards" do
+    test "create_output_pubkey/5 and scan_output/5 reject a non-32-byte input_hash" do
+      a = privkey(@sk1)
+      p = point(@spend_pub)
+
+      assert {:error, _} =
+               SilentPayments.create_output_pubkey(a, point(@scan_pub), p, <<0::size(248)>>, 0)
+
+      assert {:error, _} = SilentPayments.scan_output(a, point(@scan_pub), p, <<0::size(264)>>, 0)
+    end
+  end
+
   describe "spending_privkey/3" do
     test "unlabeled: d = (b_spend + t_k) mod n and d*G matches the output" do
       {_a_sum, a_pub, input_hash} = vector_setup()

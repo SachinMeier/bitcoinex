@@ -233,6 +233,9 @@ defmodule Bitcoinex.SilentPayments do
     end
   end
 
+  def create_output_pubkey(_a_sum, _b_scan, _b_spend, _input_hash, _k),
+    do: {:error, "input_hash must be 32 bytes"}
+
   @doc """
   scan_output derives the per-output tweak and candidate output point for index `k`
   (receiver side).
@@ -255,6 +258,9 @@ defmodule Bitcoinex.SilentPayments do
       derive_output(ecdh, b_spend, k)
     end
   end
+
+  def scan_output(_b_scan, _a_sum, _b_spend, _input_hash, _k),
+    do: {:error, "input_hash must be 32 bytes"}
 
   @doc """
   spending_privkey derives the private key `d` for a found silent payment output:
