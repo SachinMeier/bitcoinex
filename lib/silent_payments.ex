@@ -33,11 +33,12 @@ defmodule Bitcoinex.SilentPayments do
       # P_0 = B_spend + t_k·G
   """
 
-  alias Bitcoinex.Utils
+  alias Bitcoinex.{Bech32, Utils}
   alias Bitcoinex.Secp256k1
   alias Bitcoinex.Secp256k1.{Math, Params, Point, PrivateKey}
 
   @n Params.curve().n
+  @sp_version 0
 
   @input_tag "BIP0352/Inputs"
   @shared_secret_tag "BIP0352/SharedSecret"
@@ -327,6 +328,45 @@ defmodule Bitcoinex.SilentPayments do
 
   def output_label_candidates(%Point{}, _output), do: {:error, "output must be 32 bytes"}
 
+  @doc """
+  encode_address encodes a silent payment address.
+
+  It is the Bech32m encoding of silent-payment version 0 followed by
+  `ser_P(B_scan) || ser_P(B_m)` (66 bytes). The HRP is `sp` for `:mainnet` and `tsp` for
+  `:testnet`/`:regtest`. `b_m` is the (possibly labeled) spend public key — pass `B_spend`
+  for an unlabeled address or the output of `create_labeled_spend_pubkey/3` for a labeled one.
+  """
+  @spec encode_address(Point.t(), Point.t(), Bitcoinex.Network.network_name()) ::
+          {:ok, String.t()} | {:error, String.t()}
+  def encode_address(%Point{} = b_scan, %Point{} = b_m, network) do
+    with {:ok, hrp} <- hrp_for(network),
+         payload = :binary.bin_to_list(Point.sec(b_scan) <> Point.sec(b_m)),
+         {:ok, data} <- Bech32.convert_bits(payload, 8, 5),
+         {:ok, address} <- Bech32.encode(hrp, [@sp_version | data], :bech32m, :infinity) do
+      {:ok, address}
+    else
+      {:error, reason} -> {:error, normalize_error(reason)}
+    end
+  end
+
+  @doc """
+  decode_address decodes a silent payment address into `{network, version, B_scan, B_m}`.
+
+  Per BIP-352, a v0 address must carry exactly 66 payload bytes; v1–v30 read the first 66
+  bytes and ignore the rest (forward compatibility); v31 is rejected.
+  """
+  @spec decode_address(String.t()) ::
+          {:ok, {Bitcoinex.Network.network_name(), non_neg_integer(), Point.t(), Point.t()}}
+          | {:error, String.t()}
+  def decode_address(address) when is_binary(address) do
+    with {:ok, {hrp, data}} <- decode_bech32m(address),
+         {:ok, network} <- network_for(hrp),
+         {:ok, {version, payload}} <- parse_sp_data(data),
+         {:ok, {b_scan, b_m}} <- parse_address_keys(payload) do
+      {:ok, {network, version, b_scan, b_m}}
+    end
+  end
+
   # A 32-byte hash is a valid secp256k1 scalar when it is neither 0 nor >= n.
   # Note: PrivateKey.new/1 only rejects d >= n, so this guard is what enforces
   # the non-zero requirement before the callers build a PrivateKey from the hash.
@@ -386,4 +426,57 @@ defmodule Bitcoinex.SilentPayments do
 
   # P - Q = P + (-Q)
   defp subtract(p, q), do: Math.add(p, Point.negate(q))
+
+  defp decode_bech32m(address) do
+    case Bech32.decode(address, :infinity) do
+      {:ok, {:bech32m, hrp, data}} -> {:ok, {hrp, data}}
+      {:ok, {:bech32, _hrp, _data}} -> {:error, "silent payment address must be bech32m"}
+      {:error, reason} -> {:error, normalize_error(reason)}
+    end
+  end
+
+  defp parse_sp_data([]), do: {:error, "empty silent payment data"}
+
+  defp parse_sp_data([31 | _rest]), do: {:error, "silent payment version 31 is not supported"}
+
+  defp parse_sp_data([version | rest]) when version in 0..30 do
+    case Bech32.convert_bits(rest, 5, 8, false) do
+      {:ok, bytes} ->
+        payload = :erlang.list_to_binary(bytes)
+
+        cond do
+          version == 0 and byte_size(payload) != 66 ->
+            {:error, "v0 silent payment address must have a 66-byte payload"}
+
+          byte_size(payload) < 66 ->
+            {:error, "silent payment payload too short"}
+
+          true ->
+            {:ok, {version, binary_part(payload, 0, 66)}}
+        end
+
+      {:error, reason} ->
+        {:error, normalize_error(reason)}
+    end
+  end
+
+  defp parse_sp_data(_), do: {:error, "invalid silent payment version"}
+
+  defp parse_address_keys(<<scan::binary-size(33), spend::binary-size(33)>>) do
+    with {:ok, b_scan} <- Point.parse_public_key(scan),
+         {:ok, b_m} <- Point.parse_public_key(spend) do
+      {:ok, {b_scan, b_m}}
+    end
+  end
+
+  defp hrp_for(:mainnet), do: {:ok, "sp"}
+  defp hrp_for(network) when network in [:testnet, :regtest], do: {:ok, "tsp"}
+  defp hrp_for(_), do: {:error, "unsupported network for silent payments"}
+
+  defp network_for("sp"), do: {:ok, :mainnet}
+  defp network_for("tsp"), do: {:ok, :testnet}
+  defp network_for(_), do: {:error, "unrecognized silent payment HRP"}
+
+  defp normalize_error(reason) when is_binary(reason), do: reason
+  defp normalize_error(reason), do: inspect(reason)
 end

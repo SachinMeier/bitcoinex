@@ -33,6 +33,8 @@ defmodule Bitcoinex.SilentPaymentsVectorHarness do
                (expected["input_pub_keys"] || []),
              "input_pub_keys mismatch :: #{tcase["comment"]}"
 
+      assert_recipient_addresses(given["recipients"], tcase["comment"])
+
       {taproot, other} =
         Enum.reduce(eligible, {[], []}, fn {r, vin}, {tp, ot} ->
           sk = privkey(vin["private_key"])
@@ -98,6 +100,14 @@ defmodule Bitcoinex.SilentPaymentsVectorHarness do
       b_spend_priv = privkey(given["key_material"]["spend_priv_key"])
       b_spend = PrivateKey.to_point(b_spend_priv)
 
+      assert_receiving_addresses(
+        b_scan,
+        b_spend,
+        given["labels"] || [],
+        expected["addresses"],
+        tcase["comment"]
+      )
+
       {taproot_xonly, other_points} =
         Enum.reduce(vins, {[], []}, fn vin, {tp, ot} ->
           case extract_pubkey(vin) do
@@ -134,6 +144,35 @@ defmodule Bitcoinex.SilentPaymentsVectorHarness do
           verify_found(found, expected["outputs"] || [], b_spend_priv, tcase["comment"])
       end
     end
+  end
+
+  # Sender side: decode each recipient address and check it carries the given keys.
+  defp assert_recipient_addresses(recipients, comment) do
+    for r <- recipients || [] do
+      assert {:ok, {_net, _version, b_scan, b_m}} = SilentPayments.decode_address(r["address"])
+
+      assert Point.serialize_public_key(b_scan) == r["scan_pub_key"],
+             "recipient B_scan mismatch :: #{comment}"
+
+      assert Point.serialize_public_key(b_m) == r["spend_pub_key"],
+             "recipient B_m mismatch :: #{comment}"
+    end
+  end
+
+  # Receiver side: re-encode the base + labeled addresses and compare to the vector.
+  defp assert_receiving_addresses(_b_scan, _b_spend, _labels, nil, _comment), do: :ok
+
+  defp assert_receiving_addresses(b_scan, b_spend, labels, expected_addresses, comment) do
+    {:ok, base} = SilentPayments.encode_address(PrivateKey.to_point(b_scan), b_spend, :mainnet)
+
+    labeled =
+      for m <- labels do
+        {:ok, b_m} = SilentPayments.create_labeled_spend_pubkey(b_spend, b_scan, m)
+        {:ok, addr} = SilentPayments.encode_address(PrivateKey.to_point(b_scan), b_m, :mainnet)
+        addr
+      end
+
+    assert [base | labeled] == expected_addresses, "receiving addresses mismatch :: #{comment}"
   end
 
   # Optional cross-checks against the expected intermediate values, when present.
