@@ -74,8 +74,9 @@ defmodule Bitcoinex.SilentPayments do
     * sender passes `(a_sum_privkey, B_scan, input_hash)`
     * receiver passes `(b_scan_privkey, A, input_hash)`
 
-  Both parties arrive at the same point. Fails if the result is the point at
-  infinity (or the effective scalar reduces to zero).
+  `input_hash` must be a pre-validated 32-byte scalar (as produced by
+  `input_hash/2`). Both parties arrive at the same point. Fails if the result is
+  the point at infinity (or the effective scalar reduces to zero).
   """
   @spec shared_secret(PrivateKey.t(), Point.t(), <<_::256>>) ::
           {:ok, Point.t()} | {:error, String.t()}
@@ -205,6 +206,8 @@ defmodule Bitcoinex.SilentPayments do
   end
 
   # A 32-byte hash is a valid secp256k1 scalar when it is neither 0 nor >= n.
+  # Note: PrivateKey.new/1 only rejects d >= n, so this guard is what enforces
+  # the non-zero requirement before the callers build a PrivateKey from the hash.
   defp valid_scalar?(<<bytes::binary-size(32)>>) do
     i = :binary.decode_unsigned(bytes)
     i != 0 and i < @n
