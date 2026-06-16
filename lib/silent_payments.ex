@@ -440,6 +440,9 @@ defmodule Bitcoinex.SilentPayments do
   defp parse_sp_data([31 | _rest]), do: {:error, "silent payment version 31 is not supported"}
 
   defp parse_sp_data([version | rest]) when version in 0..30 do
+    # convert_bits(_, 5, 8, padding: false) requires the trailing bech32 bits to be valid
+    # zero-padding, so a malformed data part is rejected here. This matches the BIP-352
+    # reference (and Segwit) decoding; future SP versions still carry byte-aligned payloads.
     case Bech32.convert_bits(rest, 5, 8, false) do
       {:ok, bytes} ->
         payload = :erlang.list_to_binary(bytes)

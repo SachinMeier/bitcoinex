@@ -45,6 +45,12 @@ defmodule Bitcoinex.SilentPaymentsAddressTest do
     test "rejects malformed input" do
       assert {:error, _} = SilentPayments.decode_address("definitely not an address")
     end
+
+    test "returns error (does not raise) for a valid-checksum address with a bad SEC prefix" do
+      # 66-byte payload whose B_scan starts with 0x00 (not a valid 0x02/0x03 compressed key).
+      bad_payload = <<0x00>> <> :binary.copy(<<0x07>>, 65)
+      assert {:error, _} = SilentPayments.decode_address(encode_versioned(0, bad_payload))
+    end
   end
 
   describe "encode_address/3" do
