@@ -71,6 +71,13 @@ defmodule Bitcoinex.Secp256k1.PointTest do
       assert Point.parse_public_key(sec) == {:ok, pk}
       assert Point.serialize_public_key(pk) == sec
     end
+
+    test "returns error (does not raise) for a 33-byte key with an invalid prefix byte" do
+      for prefix <- [0x00, 0x01, 0x04, 0x05, 0x06, 0xFF] do
+        bad = <<prefix>> <> :binary.copy(<<0x07>>, 32)
+        assert {:error, _} = Point.parse_public_key(bad)
+      end
+    end
   end
 
   describe "sec/1" do
@@ -135,6 +142,11 @@ defmodule Bitcoinex.Secp256k1.PointTest do
       even = "023b15e1b8c51bb947a134d17addc3eb6abbda551ad02137699636f907ad7e0f1a"
       {:ok, point} = Point.parse_public_key(Base.decode16!(odd, case: :lower))
       assert Point.sec(Point.negate(point)) == Base.decode16!(even, case: :lower)
+    end
+
+    test "the point at infinity negates to itself" do
+      infinity = %Point{x: 0, y: 0}
+      assert Point.negate(infinity) == infinity
     end
   end
 end

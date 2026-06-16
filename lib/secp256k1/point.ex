@@ -59,6 +59,9 @@ defmodule Bitcoinex.Secp256k1.Point do
           {:ok, y} -> {:ok, %__MODULE__{x: x, y: y}}
           _ -> {:error, "invalid public key"}
         end
+
+      _ ->
+        {:error, "invalid public key prefix"}
     end
   end
 
@@ -106,11 +109,14 @@ defmodule Bitcoinex.Secp256k1.Point do
   end
 
   @doc """
-    negate returns the pubkey with the same x but the other y (i.e. -P).
-    It flips the parity of y by passing `y % 2 == 0` as is_y_odd to Secp256k1.get_y.
+    negate returns -P: the point with the same x but the opposite-parity y.
+    The point at infinity negates to itself.
   """
   @spec negate(t()) :: t()
+  def negate(%__MODULE__{x: 0, y: 0} = infinity), do: infinity
+
   def negate(%__MODULE__{x: x, y: y}) do
+    # Flip parity: if y is even request the odd root, and vice versa.
     {:ok, y} = Secp256k1.get_y(x, (y &&& 1) == 0)
     %__MODULE__{x: x, y: y}
   end

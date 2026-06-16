@@ -215,7 +215,7 @@ defmodule Bitcoinex.Secp256k1 do
           if Point.has_even_y(pubkey) do
             privkey
           else
-            %PrivateKey{d: Params.curve().n - privkey.d}
+            PrivateKey.negate(privkey)
           end
         end
     end

@@ -61,13 +61,13 @@ defmodule Bitcoinex.Secp256k1.PrivateKey do
   end
 
   @doc """
-    negate returns the additive inverse of the private key (n - d). Its public
-    key is the negation of the original's. Used for BIP-340 even-Y normalization
-    and BIP-352 scalar arithmetic.
+    negate returns the additive inverse of the private key, `(n - d) mod n`. Its
+    public key is the negation of the original's. Used for BIP-340 even-Y
+    normalization and BIP-352 scalar arithmetic.
   """
   @spec negate(t()) :: t()
   def negate(%__MODULE__{d: d}) do
-    %__MODULE__{d: @n - d}
+    %__MODULE__{d: Math.modulo(@n - d, @n)}
   end
 
   @doc """
@@ -79,11 +79,8 @@ defmodule Bitcoinex.Secp256k1.PrivateKey do
       {:error, msg} ->
         {:error, msg}
 
-      {:ok, %__MODULE__{d: d}} ->
-        d
-        |> :binary.encode_unsigned()
-        |> Utils.pad(32, :leading)
-        |> Base.encode16(case: :lower)
+      {:ok, sk} ->
+        to_hex(sk)
     end
   end
 
